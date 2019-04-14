@@ -280,10 +280,10 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
             raise
         js.replace_with(code)
     for img in soup('img'):
-        if not img.get('src'):
-            continue
-        img['data-src'] = img['src']
-        img['src'] = data_to_base64(index, img['src'], verbose=verbose)
+        if img.get('src'):
+            img['src'] = data_to_base64(index, img['src'], verbose=verbose)
+        if img.get('data-src'):
+            img['data-src'] = data_to_base64(index, img['data-src'], verbose=verbose)
 
         # `img` elements may have `srcset` attributes with multiple sets of images.
         # To get a lighter document it will be cleared, and used only the standard `src` attribute
