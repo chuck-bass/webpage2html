@@ -49,7 +49,6 @@ def absurl(index, relpath=None, normpath=None):
     if index_validate or relpath_validate:
         new = urlparse(urljoin(index, relpath))
         return urlunsplit((new.scheme, new.netloc, normpath(new.path), new.query, ''))
-        # normpath不是函数，为什么这里一直用normpath(path)这种格式
         # netloc contains basic auth, so do not use domain
     else:
         if relpath:
@@ -60,7 +59,13 @@ def absurl(index, relpath=None, normpath=None):
 
 def get(index, relpath=None, verbose=True, usecache=True, verify=True, ignore_error=False, username=None, password=None):
     global webpage2html_cache
-    if index.startswith('http') or index.startswith('https') or (relpath and relpath.startswith('http')):
+
+    index_validate = (index.startswith('http')
+                      or index.startswith('https'))
+    relpath_validate = (relpath and
+                        (relpath.startswith('http')
+                         or relpath.startswith('https')))
+    if index_validate or relpath_validate:
         full_path = absurl(index, relpath)
         if not full_path:
             if verbose:
