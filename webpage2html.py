@@ -37,17 +37,16 @@ def log(s, color=None, on_color=None, attrs=None, new_line=True):
     sys.stderr.flush()
 
 
-def get_as_base64(url):
-    if url.strip().startswith('data:'):
-        return url
-
-    if url.startswith('http') or url.startswith('https'):
-        return base64.b64encode(requests.get(url).content)
-
 def absurl(index, relpath=None, normpath=None):
     if normpath is None:
         normpath = lambda x: x
-    if index.lower().startswith('http') or index.lower().startswith('https') or (relpath and relpath.startswith('http')):
+
+    index_validate = (index.lower().startswith('http')
+                      or index.lower().startswith('https'))
+    relpath_validate = (relpath and
+                        (relpath.startswith('http')
+                         or relpath.startswith('https')))
+    if index_validate or relpath_validate:
         new = urlparse(urljoin(index, relpath))
         return urlunsplit((new.scheme, new.netloc, normpath(new.path), new.query, ''))
         # normpath不是函数，为什么这里一直用normpath(path)这种格式
@@ -59,7 +58,7 @@ def absurl(index, relpath=None, normpath=None):
             return index
 
 
-def get(index, relpath=None, verbose=True, usecache=False, verify=True, ignore_error=False, username=None, password=None):
+def get(index, relpath=None, verbose=True, usecache=True, verify=True, ignore_error=False, username=None, password=None):
     global webpage2html_cache
     if index.startswith('http') or index.startswith('https') or (relpath and relpath.startswith('http')):
         full_path = absurl(index, relpath)
