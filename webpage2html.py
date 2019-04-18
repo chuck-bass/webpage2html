@@ -13,8 +13,8 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 from termcolor import colored
-import requests
-
+from aiohttp import request
+import asyncio
 
 
 if sys.version > '3':
@@ -55,6 +55,61 @@ def absurl(index, relpath=None, normpath=None):
             return normpath(os.path.join(os.path.dirname(index), relpath))
         else:
             return index
+
+
+async def fetch(url, method='GET', headers=None,
+                verbose=True, ignore_error=False):
+    async with request.get(method, url, headers=headers) as response:
+        if verbose:
+            log('[ {} ] {} - {}'.format(method, response.status, response.url))
+
+        if not headers:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0'
+            }
+
+        if not ignore_error and (response.status_code >= 400
+                                 or response.status_code < 200):
+            content = ''
+        elif response.get('content_type', '').lower().startswith('text/'):
+            content = await response.text()
+        elif response.get('content_type', '').lower() == 'application/json':
+            content = await response.json()
+        else:
+            # 默认 为 bytes 的情况
+            content = await response.read()
+        return content, {'url': response.url,
+                         'content-type': response.content_type}
+
+
+async def getAsync(index, relpath=None, verbose=True, verify=True,
+                   ignore_error=False):
+    index_validate = (index.startswith('http')
+                      or index.startswith('https'))
+    relpath_validate = (relpath and
+                        (relpath.startswith('http')
+                         or relpath.startswith('https')))
+    if index_validate or relpath_validate:
+        full_path = absurl(index, relpath)
+        if not full_path:
+            if verbose:
+                log('[ WARN ] invalid path, %s %s' % (index, relpath),
+                    'yellow')
+            return '', None
+
+        full_path = quote(full_path, safe="%/:=&?~#+!$,;'@()*[]")
+
+        try:
+            return fetch(full_path)
+        except Exception as ex:
+            if verbose:
+                log('[ WARN ] %s - %s %s' % ('???', full_path, ex), 'yellow')
+            return '', None
+
+    else:
+        if verbose:
+            log('[ ERROR ] invalid index - %s' % index, 'red')
+        return '', None
 
 
 def get(index, relpath=None, verbose=True, usecache=True, verify=True, ignore_error=False, username=None, password=None):
