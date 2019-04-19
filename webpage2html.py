@@ -220,8 +220,8 @@ async def generate(index, verbose=True, keep_script=False,
     return generated single html
      该方法已经被改为异步方法；
      在只有一个 url 时看不出来威力；
-     甚至比 普通同步方法还要慢 一点点；
-     但我相信，在并发 url 的环境下,
+     只比 普通同步方法快 一点点；
+     在并发 url 的环境下,
      肯定是比同步的要快很多！！！
     """
     html_doc, extra_data = await getAsync(index, verbose=verbose,
@@ -254,12 +254,12 @@ async def generate(index, verbose=True, keep_script=False,
                             continue
                         css[attr] = link[attr]
                     css_data, _ = await getAsync(index,
-                                                relpath=link['href'], verbose=verbose)
+                                                 relpath=link['href'], verbose=verbose)
                     new_css_content = await handle_css_content(absurl
-                                                            (index,
+                                                               (index,
                                                                 link['href']),
-                                                            css_data,
-                                                            verbose=verbose)
+                                                               css_data,
+                                                               verbose=verbose)
                     # if "stylesheet/less" in '\n'.join(link.get('rel') or []).lower():
                     # fix browser side less: http://lesscss.org/#client-side-usage
                     #     # link['href'] = 'data:text/less;base64,' + base64.b64encode(css_data)
