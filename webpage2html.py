@@ -304,11 +304,24 @@ async def generate(index, verbose=True, keep_script=False,
             js.replace_with(code)
 
     async def handle_image():
+        src_arr = []
         for img in soup('img'):
             if img.get('src'):
-                img['src'] = await data_to_base64(index, img['src'])
+                src_arr.append(img['src'])
             if img.get('data-src'):
-                img['src'] = await data_to_base64(index, img['data-src'])
+                src_arr.append(img['data-src'])
+
+        image_arr = await asyncio.gather(*[data_to_base64(index,
+                                                    src) for src in src_arr])
+        idx = 0
+
+        for img in soup('img'):
+            if img.get('src'):
+                img['src'] = image_arr[idx]
+                idx += 1
+            if img.get('data-src'):
+                img['src'] = image_arr[idx]
+                idx += 1
                 del img['data-src']
 
             # `img` elements may have `srcset` attributes with multiple sets of images.
