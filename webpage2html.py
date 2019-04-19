@@ -192,6 +192,10 @@ async def handle_css_content(index, css, verbose=True):
     reg = re.compile(r'url\s*\((.+?)\)')
     src_arr = reg.findall(css)
     src_arr = [i.strip(' \'"') for i in src_arr]
+
+    if len(src_arr) == 0:
+        return css
+
     data_arr = await asyncio.gather(*[data_to_base64(index, src, verbose)
                                     for src in src_arr])
 
