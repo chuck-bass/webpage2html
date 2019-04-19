@@ -312,7 +312,7 @@ async def generate(index, verbose=True, keep_script=False,
                 src_arr.append(img['data-src'])
 
         image_arr = await asyncio.gather(*[data_to_base64(index,
-                                                    src) for src in src_arr])
+                                                          src) for src in src_arr])
         idx = 0
 
         for img in soup('img'):
