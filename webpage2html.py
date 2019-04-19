@@ -233,121 +233,130 @@ async def generate(index, verbose=True, keep_script=False,
 
     # now build the dom tree
     soup = BeautifulSoup(html_doc, 'lxml')
-    soup_title = soup.title.string if soup.title else ''
 
-    for link in soup('link'):
-        if link.get('href'):
-            if 'mask-icon' in (link.get('rel') or []) or 'icon' in (link.get('rel') or []) or 'apple-touch-icon' in (
-                    link.get('rel') or []) or 'apple-touch-icon-precomposed' in (link.get('rel') or []):
-                link['data-href'] = link['href']
+    async def handle_link():
+        for link in soup('link'):
+            if link.get('href'):
+                if 'mask-icon' in (link.get('rel') or []) or 'icon' in (link.get('rel') or []) or 'apple-touch-icon' in (
+                        link.get('rel') or []) or 'apple-touch-icon-precomposed' in (link.get('rel') or []):
+                    link['data-href'] = link['href']
 
-                link['href'] = await data_to_base64(index,
-                                                    link['href'],
-                                                    verbose=verbose)
-            elif link.get('type') == 'text/css' or link['href'].lower().endswith('.css') or 'stylesheet' in (
-                    link.get('rel') or []):
-                new_type = 'text/css' if not link.get('type') else link['type']
-                css = soup.new_tag('style', type=new_type)
-                css['data-href'] = link['href']
-                for attr in link.attrs:
-                    if attr in ['href']:
-                        continue
-                    css[attr] = link[attr]
-                css_data, _ = await getAsync(index,
-                                             relpath=link['href'], verbose=verbose)
-                new_css_content = await handle_css_content(absurl
-                                                           (index,
-                                                            link['href']),
-                                                           css_data,
-                                                           verbose=verbose)
-                # if "stylesheet/less" in '\n'.join(link.get('rel') or []).lower():
-                # fix browser side less: http://lesscss.org/#client-side-usage
-                #     # link['href'] = 'data:text/less;base64,' + base64.b64encode(css_data)
-                #     link['data-href'] = link['href']
-                #     link['href'] = absurl(index, link['href'])
-                if False:  # new_css_content.find('@font-face') > -1 or new_css_content.find('@FONT-FACE') > -1:
-                    link['href'] = 'data:text/css;base64,' + base64.b64encode(new_css_content)
-                else:
-                    css.string = new_css_content
-                    link.replace_with(css)
-            elif full_url:
-                link['data-href'] = link['href']
-                link['href'] = absurl(index, link['href'])
-    for js in soup('script'):
-        if not keep_script:
-            js.replace_with('')
-            continue
-        if not js.get('src'):
-            continue
-        new_type = 'text/javascript' if not js.has_attr('type') or not js['type'] else js['type']
-        code = soup.new_tag('script', type=new_type)
-        code['data-src'] = js['src']
-        js_str, _ = await getAsync(index, relpath=js['src'], verbose=verbose)
-        if type(js_str) == bytes:
-            js_str = js_str.decode('utf-8')
-        try:
-            if js_str.find('</script>') > -1:
-                code['src'] = 'data:text/javascript;base64,' + base64.b64encode(js_str.encode()).decode()
-            elif js_str.find(']]>') < 0:
-                code.string = '<!--//--><![CDATA[//><!--\n' + js_str + '\n//--><!]]>'
-            else:
-                # replace ]]> does not work at all for chrome, do not believe
-                # http://en.wikipedia.org/wiki/CDATA
-                # code.string = '<![CDATA[\n' + js_str.replace(']]>', ']]]]><![CDATA[>') + '\n]]>'
-                code.string = js_str
-        except Exception:
-            if verbose:
-                log(repr(js_str))
-            raise
-        js.replace_with(code)
-    for img in soup('img'):
-        if img.get('src'):
-            img['src'] = await data_to_base64(index, img['src'])
-        if img.get('data-src'):
-            img['src'] = await data_to_base64(index, img['data-src'])
-            del img['data-src']
-
-        # `img` elements may have `srcset` attributes with multiple sets of images.
-        # To get a lighter document it will be cleared, and used only the standard `src` attribute
-        # Maybe add a flag to enable the base64 conversion of each `srcset`?
-        # For now a simple warning is displayed informing that image has multiple sources
-        # that are stripped.
-
-        if img.get('srcset'):
-            img['data-srcset'] = img['srcset']
-            del img['srcset']
-            if verbose:
-                log('[ WARN ] srcset found in img tag. Attribute will be cleared. File src => %s' % (img['data-src']),
-                    'yellow')
-
-        def check_alt(attr):
-            if img.has_attr(attr) and img[attr].startswith('this.src='):
-                # we do not handle this situation yet, just warn the user
-                if verbose:
-                    log('[ WARN ] %s found in img tag and unhandled, which may break page' % (attr), 'yellow')
-
-        check_alt('onerror')
-        check_alt('onmouseover')
-        check_alt('onmouseout')
-    for tag in soup(True):
-        if full_url and tag.name == 'a' and tag.has_attr('href') and not tag['href'].startswith('#'):
-            tag['data-href'] = tag['href']
-            tag['href'] = absurl(index, tag['href'])
-        if tag.has_attr('style'):
-            if tag['style']:
-                tag['style'] = await handle_css_content(index,
-                                                        tag['style'],
+                    link['href'] = await data_to_base64(index,
+                                                        link['href'],
                                                         verbose=verbose)
-        elif tag.name == 'link' and tag.has_attr('type') and tag['type'] == 'text/css':
-            if tag.string:
-                tag.string = await handle_css_content(index,
-                                                      tag.string,
-                                                      verbose=verbose)
-        elif tag.name == 'style':
-            if tag.string:
-                tag.string = await handle_css_content(index,
-                                                      tag.string,
-                                                      verbose=verbose)
+                elif link.get('type') == 'text/css' or link['href'].lower().endswith('.css') or 'stylesheet' in (
+                        link.get('rel') or []):
+                    new_type = 'text/css' if not link.get('type') else link['type']
+                    css = soup.new_tag('style', type=new_type)
+                    css['data-href'] = link['href']
+                    for attr in link.attrs:
+                        if attr in ['href']:
+                            continue
+                        css[attr] = link[attr]
+                    css_data, _ = await getAsync(index,
+                                                relpath=link['href'], verbose=verbose)
+                    new_css_content = await handle_css_content(absurl
+                                                            (index,
+                                                                link['href']),
+                                                            css_data,
+                                                            verbose=verbose)
+                    # if "stylesheet/less" in '\n'.join(link.get('rel') or []).lower():
+                    # fix browser side less: http://lesscss.org/#client-side-usage
+                    #     # link['href'] = 'data:text/less;base64,' + base64.b64encode(css_data)
+                    #     link['data-href'] = link['href']
+                    #     link['href'] = absurl(index, link['href'])
+                    if False:  # new_css_content.find('@font-face') > -1 or new_css_content.find('@FONT-FACE') > -1:
+                        link['href'] = 'data:text/css;base64,' + base64.b64encode(new_css_content)
+                    else:
+                        css.string = new_css_content
+                        link.replace_with(css)
+                elif full_url:
+                    link['data-href'] = link['href']
+                    link['href'] = absurl(index, link['href'])
+
+    async def handle_js():
+        for js in soup('script'):
+            if not keep_script:
+                js.replace_with('')
+                continue
+            if not js.get('src'):
+                continue
+            new_type = 'text/javascript' if not js.has_attr('type') or not js['type'] else js['type']
+            code = soup.new_tag('script', type=new_type)
+            code['data-src'] = js['src']
+            js_str, _ = await getAsync(index, relpath=js['src'], verbose=verbose)
+            if type(js_str) == bytes:
+                js_str = js_str.decode('utf-8')
+            try:
+                if js_str.find('</script>') > -1:
+                    code['src'] = 'data:text/javascript;base64,' + base64.b64encode(js_str.encode()).decode()
+                elif js_str.find(']]>') < 0:
+                    code.string = '<!--//--><![CDATA[//><!--\n' + js_str + '\n//--><!]]>'
+                else:
+                    # replace ]]> does not work at all for chrome, do not believe
+                    # http://en.wikipedia.org/wiki/CDATA
+                    # code.string = '<![CDATA[\n' + js_str.replace(']]>', ']]]]><![CDATA[>') + '\n]]>'
+                    code.string = js_str
+            except Exception:
+                if verbose:
+                    log(repr(js_str))
+                raise
+            js.replace_with(code)
+
+    async def handle_image():
+        for img in soup('img'):
+            if img.get('src'):
+                img['src'] = await data_to_base64(index, img['src'])
+            if img.get('data-src'):
+                img['src'] = await data_to_base64(index, img['data-src'])
+                del img['data-src']
+
+            # `img` elements may have `srcset` attributes with multiple sets of images.
+            # To get a lighter document it will be cleared, and used only the standard `src` attribute
+            # Maybe add a flag to enable the base64 conversion of each `srcset`?
+            # For now a simple warning is displayed informing that image has multiple sources
+            # that are stripped.
+
+            if img.get('srcset'):
+                img['data-srcset'] = img['srcset']
+                del img['srcset']
+                if verbose:
+                    log('[ WARN ] srcset found in img tag. Attribute will be cleared. File src => %s' % (img['data-src']),
+                        'yellow')
+
+            def check_alt(attr):
+                if img.has_attr(attr) and img[attr].startswith('this.src='):
+                    # we do not handle this situation yet, just warn the user
+                    if verbose:
+                        log('[ WARN ] %s found in img tag and unhandled, which may break page' % (attr), 'yellow')
+
+            check_alt('onerror')
+            check_alt('onmouseover')
+            check_alt('onmouseout')
+
+    async def handle_tag():
+        for tag in soup(True):
+            if full_url and tag.name == 'a' and tag.has_attr('href') and not tag['href'].startswith('#'):
+                tag['data-href'] = tag['href']
+                tag['href'] = absurl(index, tag['href'])
+            if tag.has_attr('style'):
+                if tag['style']:
+                    tag['style'] = await handle_css_content(index,
+                                                            tag['style'],
+                                                            verbose=verbose)
+            elif tag.name == 'link' and tag.has_attr('type') and tag['type'] == 'text/css':
+                if tag.string:
+                    tag.string = await handle_css_content(index,
+                                                          tag.string,
+                                                          verbose=verbose)
+            elif tag.name == 'style':
+                if tag.string:
+                    tag.string = await handle_css_content(index,
+                                                          tag.string,
+                                                          verbose=verbose)
+
+    await asyncio.gather(handle_link(), handle_js(), handle_image(),
+                         handle_tag())
 
     if prettify:
         return soup.prettify(formatter='html')
