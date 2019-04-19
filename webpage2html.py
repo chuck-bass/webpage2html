@@ -23,15 +23,13 @@ else:
     from urlparse import urlparse, urlunsplit, urljoin
     from urllib import quote
 
-re_css_url = re.compile(r'(url\(.*?\))')
-webpage2html_cache = {}
-
 
 def log(s, color=None, on_color=None, attrs=None, new_line=True):
     if not color:
         print(str(s), end=' ', file=sys.stderr)
     else:
-        print(colored(str(s), color, on_color, attrs), end=' ', file=sys.stderr)
+        print(colored(str(s),
+                      color, on_color, attrs), end=' ', file=sys.stderr)
     if new_line:
         sys.stderr.write('\n')
     sys.stderr.flush()
@@ -59,26 +57,27 @@ def absurl(index, relpath=None, normpath=None):
 
 async def fetch(url, method='GET', headers=None,
                 verbose=True, ignore_error=False):
-    async with request.get(method, url, headers=headers) as response:
+    async with request(method, url, headers=headers) as response:
         if verbose:
-            log('[ {} ] {} - {}'.format(method, response.status, response.url))
+            log('[ {} ] {} - {}'.format(method,
+                                        response.status, response.url))
 
         if not headers:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0'
             }
 
-        if not ignore_error and (response.status_code >= 400
-                                 or response.status_code < 200):
+        if not ignore_error and (response.status >= 400
+                                 or response.status < 200):
             content = ''
-        elif response.get('content_type', '').lower().startswith('text/'):
+        elif response.content_type.lower().startswith('text/'):
             content = await response.text()
-        elif response.get('content_type', '').lower() == 'application/json':
+        elif response.content_type.lower() == 'application/json':
             content = await response.json()
         else:
             # 默认 为 bytes 的情况
             content = await response.read()
-        return content, {'url': response.url,
+        return content, {'url': str(response.url),
                          'content-type': response.content_type}
 
 
@@ -100,7 +99,7 @@ async def getAsync(index, relpath=None, verbose=True, verify=True,
         full_path = quote(full_path, safe="%/:=&?~#+!$,;'@()*[]")
 
         try:
-            return fetch(full_path)
+            return await fetch(full_path)
         except Exception as ex:
             if verbose:
                 log('[ WARN ] %s - %s %s' % ('???', full_path, ex), 'yellow')
@@ -112,86 +111,7 @@ async def getAsync(index, relpath=None, verbose=True, verify=True,
         return '', None
 
 
-def get(index, relpath=None, verbose=True, usecache=True, verify=True, ignore_error=False, username=None, password=None):
-    global webpage2html_cache
-
-    index_validate = (index.startswith('http')
-                      or index.startswith('https'))
-    relpath_validate = (relpath and
-                        (relpath.startswith('http')
-                         or relpath.startswith('https')))
-    if index_validate or relpath_validate:
-        full_path = absurl(index, relpath)
-        if not full_path:
-            if verbose:
-                log('[ WARN ] invalid path, %s %s' % (index, relpath), 'yellow')
-            return '', None
-        # urllib2 only accepts valid url, the following code is taken from urllib
-        # http://svn.python.org/view/python/trunk/Lib/urllib.py?r1=71780&r2=71779&pathrev=71780
-        full_path = quote(full_path, safe="%/:=&?~#+!$,;'@()*[]")
-        if usecache:
-            if full_path in webpage2html_cache:
-                if verbose:
-                    log('[ CACHE HIT ] - %s' % full_path)
-                return webpage2html_cache[full_path], None
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:65.0) Gecko/20100101 Firefox/65.0'
-        }
-
-        auth = None
-        if username and password:
-            auth = requests.auth.HTTPBasicAuth(username, password)
-
-        try:
-            response = requests.get(full_path, headers=headers, verify=verify, auth=auth)
-            if verbose:
-                log('[ GET ] %d - %s' % (response.status_code, response.url))
-            if not ignore_error and (response.status_code >= 400 or response.status_code < 200):
-                content = ''
-            elif response.headers.get('content-type', '').lower().startswith('text/'):
-                content = response.text
-            else:
-                content = response.content
-            if usecache:
-                webpage2html_cache[response.url] = content
-            return content, {'url': response.url, 'content-type': response.headers.get('content-type')}
-        except Exception as ex:
-            if verbose:
-                log('[ WARN ] %s - %s %s' % ('???', full_path, ex), 'yellow')
-            return '', None
-    elif os.path.exists(index):
-        if relpath:
-            relpath = relpath.split('#')[0].split('?')[0]
-            if os.path.exists(relpath):
-                full_path = relpath
-            else:
-                full_path = os.path.normpath(os.path.join(os.path.dirname(index), relpath))
-            try:
-                ret = open(full_path, 'rb').read()
-                if verbose:
-                    log('[ LOCAL ] found - %s' % full_path)
-                return ret, None
-            except IOError as err:
-                if verbose:
-                    log('[ WARN ] file not found - %s %s' % (full_path, str(err)), 'yellow')
-                return '', None
-        else:
-            try:
-                ret = open(index, 'rb').read()
-                if verbose:
-                    log('[ LOCAL ] found - %s' % index)
-                return ret, None
-            except IOError as err:
-                if verbose:
-                    log('[ WARN ] file not found - %s %s' % (index, str(err)), 'yellow')
-                return '', None
-    else:
-        if verbose:
-            log('[ ERROR ] invalid index - %s' % index, 'red')
-        return '', None
-
-
-def data_to_base64(index, src, verbose=True):
+async def data_to_base64(index, src, verbose=True):
     # doc here: http://en.wikipedia.org/wiki/Data_URI_scheme
     sp = urlparse(src).path.lower()
     if src.strip().startswith('data:'):
@@ -225,7 +145,8 @@ def data_to_base64(index, src, verbose=True):
     else:
         # what if it's not a valid font type? may not matter
         fmt = 'image/png'
-    data, extra_data = get(index, src, verbose=verbose)
+    # data, extra_data = get(index, src, verbose=verbose)
+    data, extra_data = await getAsync(index, src, verbose=verbose)
     if extra_data and extra_data.get('content-type'):
         fmt = extra_data.get('content-type').replace(' ', '')
     if data:
@@ -245,7 +166,7 @@ def data_to_base64(index, src, verbose=True):
 css_encoding_re = re.compile(r'''@charset\s+["']([-_a-zA-Z0-9]+)["']\;''', re.I)
 
 
-def handle_css_content(index, css, verbose=True):
+async def handle_css_content(index, css, verbose=True):
     if not css:
         return css
     if not isinstance(css, str):
@@ -257,32 +178,45 @@ def handle_css_content(index, css, verbose=True):
         if mo:
             try:
                 css = css.decode(mo.group(1))
-            except:
-                log('[ WARN ] failed to convert css to encoding %s' % mo.group(1), 'yellow')
-    # Watch out! how to handle urls which contain parentheses inside? Oh god, css does not support such kind of urls
-    # I tested such url in css, and, unfortunately, the css rule is broken. LOL!
+            except Exception:
+                log('[ WARN ] failed to convert css to encoding {}'
+                    .format(mo.group(1)),
+                    'yellow')
+    # Watch out! how to handle urls which contain parentheses inside? Oh god,
+    # css does not support such kind of urls
+    # I tested such url in css, and, unfortunately, the css rule is broken.
+    # LOL!
     # I have to say that, CSS is awesome!
     reg = re.compile(r'url\s*\((.+?)\)')
+    src_arr = reg.findall(css)
+    src_arr = [i.strip(' \'"') for i in src_arr]
+    data_arr = await asyncio.gather(*[data_to_base64(index, src, verbose)
+                                    for src in src_arr])
+    log(data_arr)
+
+    index_func = 0
 
     def repl(matchobj):
-        src = matchobj.group(1).strip(' \'"')
-        # if src.lower().endswith('woff') or src.lower().endswith('ttf') or src.lower().endswith('otf') or src.lower().endswith('eot'):
-        #     # dont handle font data uri currently
-        #     return 'url(' + src + ')'
-        return 'url(' + data_to_base64(index, src, verbose=verbose) + ')'
+        nonlocal index_func
+        data = data_arr[index_func]
+        index_func += 1
+        return 'url(' + data + ')'
 
     css = reg.sub(repl, css)
     return css
 
 
-def generate(index, verbose=True, comment=True, keep_script=False, prettify=False, full_url=True, verify=True,
-             errorpage=False, username=None, password=None, **kwargs):
+async def generate(index, verbose=True, comment=True, keep_script=False,
+                   prettify=False, full_url=True, verify=True,
+                   errorpage=False, **kwargs):
     """
-    given a index url such as http://www.google.com, http://custom.domain/index.html
+    given a index url such as http://www.google.com,
+    http://custom.domain/index.html
     return generated single html
     """
-    html_doc, extra_data = get(index, verbose=verbose, verify=verify, ignore_error=errorpage,
-                               username=username, password=password)
+    html_doc, extra_data = await getAsync(index, verbose=verbose,
+                                          verify=verify,
+                                          ignore_error=errorpage)
 
     if extra_data and extra_data.get('url'):
         index = extra_data['url']
@@ -297,7 +231,9 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
                     link.get('rel') or []) or 'apple-touch-icon-precomposed' in (link.get('rel') or []):
                 link['data-href'] = link['href']
 
-                link['href'] = data_to_base64(index, link['href'], verbose=verbose)
+                link['href'] = await data_to_base64(index,
+                                                    link['href'],
+                                                    verbose=verbose)
             elif link.get('type') == 'text/css' or link['href'].lower().endswith('.css') or 'stylesheet' in (
                     link.get('rel') or []):
                 new_type = 'text/css' if not link.get('type') else link['type']
@@ -307,9 +243,15 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
                     if attr in ['href']:
                         continue
                     css[attr] = link[attr]
-                css_data, _ = get(index, relpath=link['href'], verbose=verbose)
-                new_css_content = handle_css_content(absurl(index, link['href']), css_data, verbose=verbose)
-                # if "stylesheet/less" in '\n'.join(link.get('rel') or []).lower():    # fix browser side less: http://lesscss.org/#client-side-usage
+                css_data, _ = await getAsync(index,
+                                             relpath=link['href'], verbose=verbose)
+                new_css_content = await handle_css_content(absurl
+                                                           (index,
+                                                            link['href']),
+                                                           css_data,
+                                                           verbose=verbose)
+                # if "stylesheet/less" in '\n'.join(link.get('rel') or []).lower():
+                # fix browser side less: http://lesscss.org/#client-side-usage
                 #     # link['href'] = 'data:text/less;base64,' + base64.b64encode(css_data)
                 #     link['data-href'] = link['href']
                 #     link['href'] = absurl(index, link['href'])
@@ -330,7 +272,7 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
         new_type = 'text/javascript' if not js.has_attr('type') or not js['type'] else js['type']
         code = soup.new_tag('script', type=new_type)
         code['data-src'] = js['src']
-        js_str, _ = get(index, relpath=js['src'], verbose=verbose)
+        js_str, _ = await getAsync(index, relpath=js['src'], verbose=verbose)
         if type(js_str) == bytes:
             js_str = js_str.decode('utf-8')
         try:
@@ -342,17 +284,17 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
                 # replace ]]> does not work at all for chrome, do not believe
                 # http://en.wikipedia.org/wiki/CDATA
                 # code.string = '<![CDATA[\n' + js_str.replace(']]>', ']]]]><![CDATA[>') + '\n]]>'
-                code.string = js_str.encode('utf-8')
-        except:
+                code.string = js_str
+        except Exception:
             if verbose:
                 log(repr(js_str))
             raise
         js.replace_with(code)
     for img in soup('img'):
         if img.get('src'):
-            img['src'] = data_to_base64(index, img['src'])
+            img['src'] = await data_to_base64(index, img['src'])
         if img.get('data-src'):
-            img['src'] = data_to_base64(index, img['data-src'])
+            img['src'] = await data_to_base64(index, img['data-src'])
             del img['data-src']
 
         # `img` elements may have `srcset` attributes with multiple sets of images.
@@ -383,13 +325,19 @@ def generate(index, verbose=True, comment=True, keep_script=False, prettify=Fals
             tag['href'] = absurl(index, tag['href'])
         if tag.has_attr('style'):
             if tag['style']:
-                tag['style'] = handle_css_content(index, tag['style'], verbose=verbose)
+                tag['style'] = await handle_css_content(index,
+                                                        tag['style'],
+                                                        verbose=verbose)
         elif tag.name == 'link' and tag.has_attr('type') and tag['type'] == 'text/css':
             if tag.string:
-                tag.string = handle_css_content(index, tag.string, verbose=verbose)
+                tag.string = await handle_css_content(index,
+                                                      tag.string,
+                                                      verbose=verbose)
         elif tag.name == 'style':
             if tag.string:
-                tag.string = handle_css_content(index, tag.string, verbose=verbose)
+                tag.string = await handle_css_content(index,
+                                                      tag.string,
+                                                      verbose=verbose)
 
     # finally insert some info into comments
     if comment:
@@ -452,7 +400,9 @@ def main():
     args.index = args.url
     kwargs = vars(args)
 
-    rs = generate(**kwargs)
+    loop = asyncio.get_event_loop()
+    rs = loop.run_until_complete(generate(**kwargs))
+    loop.close()
     if args.output and args.output != '-':
         with open(args.output, 'wb') as f:
             f.write(rs.encode())
