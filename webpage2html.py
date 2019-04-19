@@ -9,6 +9,7 @@ import datetime
 import os
 import re
 import sys
+import timeit
 
 import requests
 from bs4 import BeautifulSoup
@@ -59,6 +60,7 @@ async def fetch(url, method='GET', headers=None,
                 verbose=True, ignore_error=False):
     async with request(method, url, headers=headers) as response:
         if verbose:
+            # log('fetch url : {}'.format(url))
             log('[ {} ] {} - {}'.format(method,
                                         response.status, response.url))
 
@@ -192,7 +194,6 @@ async def handle_css_content(index, css, verbose=True):
     src_arr = [i.strip(' \'"') for i in src_arr]
     data_arr = await asyncio.gather(*[data_to_base64(index, src, verbose)
                                     for src in src_arr])
-    log(data_arr)
 
     index_func = 0
 
@@ -206,13 +207,18 @@ async def handle_css_content(index, css, verbose=True):
     return css
 
 
-async def generate(index, verbose=True, comment=True, keep_script=False,
+async def generate(index, verbose=True, keep_script=False,
                    prettify=False, full_url=True, verify=True,
                    errorpage=False, **kwargs):
     """
     given a index url such as http://www.google.com,
     http://custom.domain/index.html
     return generated single html
+     该方法已经被改为异步方法；
+     在只有一个 url 时看不出来威力；
+     甚至比 普通同步方法还要慢 一点点；
+     但我相信，在并发 url 的环境下,
+     肯定是比同步的要快很多！！！
     """
     html_doc, extra_data = await getAsync(index, verbose=verbose,
                                           verify=verify,
@@ -339,13 +345,6 @@ async def generate(index, verbose=True, comment=True, keep_script=False,
                                                       tag.string,
                                                       verbose=verbose)
 
-    # finally insert some info into comments
-    if comment:
-        for html in soup('html'):
-            html.insert(0, BeautifulSoup('<!-- \n single html processed by https://github.com/zTrix/webpage2html\n '
-                                         'title: %s\n url: %s\n date: %s\n-->' % (soup_title, index, datetime.datetime.
-                                                                                  now().ctime()), 'lxml'))
-            break
     if prettify:
         return soup.prettify(formatter='html')
     else:
@@ -400,9 +399,12 @@ def main():
     args.index = args.url
     kwargs = vars(args)
 
+    start = timeit.default_timer()
     loop = asyncio.get_event_loop()
     rs = loop.run_until_complete(generate(**kwargs))
     loop.close()
+    end = timeit.default_timer()
+    log(str(end-start))
     if args.output and args.output != '-':
         with open(args.output, 'wb') as f:
             f.write(rs.encode())
