@@ -1,6 +1,11 @@
 
 # Webpage2html
 
+原项目不支持https链接的图片的下载；
+此外下载时没有使用协程；
+
+所以 fork后改进。
+
 [![Build Status](https://travis-ci.org/zTrix/webpage2html.png)](https://travis-ci.org/zTrix/webpage2html)
 
 ## Webpage2html: Save web page to a single html file
